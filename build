@@ -1,0 +1,7 @@
+## Mac OS version
+#g++ -Wall -g -O2 cfd_paint_beginnings.C -framework Foundation -framework GLUT -framework OpenGL -lm -I /usr/local/include -L /usr/local/lib -o cfd_paint_beginnings -std=c++11 -lOpenImageIO
+
+## Linux version
+#g++ -Wall -g -O2 cfd_paint_beginnings.C -lm -lGL -lglut -I /opt/local/include -I /group/dpa/include -L/group/dpa/lib -lOpenImageIO -o cfd_paint_beginnings
+
+g++ -Wall -g -O2 cfd_main.cpp cfd.cpp -framework Foundation -framework GLUT -framework OpenGL -lm -I /usr/local/include -L /usr/local/lib -o cfd_paint_beginnings -std=c++11 -lOpenImageIO
