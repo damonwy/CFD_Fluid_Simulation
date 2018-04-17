@@ -86,6 +86,8 @@ float lx, ly;
 int nx, ny;
 int gs, iop;
 int display_mode;
+Scheme advection_scheme;
+
 enum 
 {
    DISPLAY, VELOCITY, PRESSURE, DENSITY
@@ -98,7 +100,7 @@ enum{ PAINT_OBSTRUCTION, PAINT_SOURCE, PAINT_DIVERGENCE, PAINT_COLOR };
 
 float scaling_factor;
 
-float h = 0.2; // timestep
+float h = 0.02; // timestep
 float grav = 9.8;
 
 #define BRUSH_SIZE 11
@@ -299,6 +301,7 @@ void DabSomePaint( int x, int y )
    source_map = cfd_demo->getSourceMap();
    obstruction_map = cfd_demo->getObstructionMap();
    divergence_source_map = cfd_demo->getDivergenceSourceMap();
+   color_map = cfd_demo->getColorMap();
 
    if( paint_mode == PAINT_OBSTRUCTION )
    {
@@ -308,6 +311,7 @@ void DabSomePaint( int x, int y )
 	     {
           int index = ix + iwidth*(iheight-iy-1);
           obstruction_map[index] *= obstruction_brush[ix-xstart][iy-ystart];
+        
 	    }
       }
    }
@@ -319,7 +323,10 @@ void DabSomePaint( int x, int y )
 	     {
             int index = ix + iwidth*(iheight-iy-1);
             source_map[index] += source_brush[ix-xstart][iy-ystart];
+            color_map[3*index+0]+= source_brush[ix-xstart][iy-ystart];
 
+            color_map[3*index+1]+= source_brush[ix-xstart][iy-ystart];
+            color_map[3*index+2]+= source_brush[ix-xstart][iy-ystart];
 	     }
       }
    }
@@ -500,10 +507,10 @@ int main(int argc, char** argv)
     frame = 1;
     CmdLineFind clf( argc, argv );
 
-    iwidth = clf.find("-iwidth", 512, "Horizontal width" );
-    iheight = clf.find("-iheight", 512, "Vertical height" );
+    iwidth = clf.find("-iwidth", 444, "Horizontal width" );
+    iheight = clf.find("-iheight", iwidth, "Vertical height" );
 
-    nx = clf.find("-NX", 512, "Horizontal grid points" );
+    nx = clf.find("-NX", iwidth, "Horizontal grid points" );
     ny = clf.find("-NY", nx, "Vertical grid points" );
 
     gs = clf.find("-GS", 30, "GS loops");
@@ -513,7 +520,7 @@ int main(int argc, char** argv)
     captured_file_basename = clf.find("-fname", "cfdbeginning" );
 
     setNbCores(4);
-    string imagename = clf.find("-image", "grumpy.jpg", "Image to drive color");
+    string imagename = clf.find("-image", "bw.jpg", "Image to drive color");
 
     clf.usage("-h");
     clf.printFinds();
@@ -529,8 +536,11 @@ int main(int argc, char** argv)
     paint_mode = PAINT_SOURCE;
     display_mode = DISPLAY;
     has_boundary = true;
+    advection_scheme = SL;
+    //advection_scheme = BFECC;
 
-    cfd_demo = new cfd(lx, ly, nx, ny, gs, iop, h, grav);
+
+    cfd_demo = new cfd(lx, ly, nx, ny, gs, iop, h, grav, advection_scheme);
 
     display_map = new float[3*size];
     Initialize(display_map, 3*size, 0.0 );

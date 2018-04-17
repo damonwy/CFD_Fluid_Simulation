@@ -1,10 +1,12 @@
 #ifndef CFDSIM_CFD_H_
 #define CFDSIM_CFD_H_
 
+enum Scheme { BFECC, SL, MM };
+
 class cfd
 {
 	public:
-	cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, float _grav);
+	cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, float _grav, Scheme _advect);
 	~cfd();
 
 	float* getColorMap();
@@ -13,35 +15,38 @@ class cfd
 	float* getColorMapWithBoundary();
 	float* getDivergenceSourceMap();
 
-	void updateTimeStep(float _h);
-	void updateGrav(float _grav);
-
-	void getVelocity(int i, int j, float &u, float &v);
-	void getDensity(int i, int j, float &den);
-	void getColor(int i, int j, int channel, float &col);
+	void getVelocity(int i, int j, float &u, float &v, float *velocityMap);
+	void getDensity(int i, int j, float &den, float *densityMap);
+	void getColor(int i, int j, int channel, float &col, float *colorMap);
 	void getDivergence(int i, int j, float &div);
 	void getPressure(int i, int j, float &pre);
 
-	void swapColMap();
-	void swapDenMap();
-	void swapVelMap();
+	void interpolateVelocity(float x, float y, float &u, float &v, float *velocityMap);
+	void interpolateDensity(float x, float y, float &res, float *densityMap);
+	void interpolateColor(float x, float y, int channel, float &res, float *colorMap);
 
-	void interpolateVelocity(float x, float y, float &u, float &v);
-	void interpolateDensity(float x, float y, float &res);
-	void interpolateColor(float x, float y, int channel, float &res);
+	void advectDensity(float *&target_density_map, float *&source_density_map, float *&temp_density_map, bool isBackWards);
+	void advectVelocity(float *&target_velocity_map, float *&source_velocity_map, float *&temp_velocity_map, bool isBackWards);
+	void advectColor(float *&target_color_map, float *&source_color_map, float *&temp_color_map, bool isBackWards);
 
-	void advectDensity();
-	void advectVelocity();
-	void advectColor();
+	void advectDensityBFECC();
+	void advectVelocityBFECC();
+	void advectColorBFECC();
+
+
 	void bouyancy();
 	void addForces();
-	void drawSourcesToDensity();
-	void modifyVelocity();
+	
 	void computeDivergence();
 	void computePressure();
 	void modifyBoundary();
+	void modifyVelocity();
 	void project();
 	void updateFluid();
+
+	void drawSourcesToDensity();
+	void updateTimeStep(float _h);
+	void updateGrav(float _grav);
 	void Initialize( float *data, int size, float value );
 
 private:
@@ -52,20 +57,40 @@ private:
 	int dx, dy;
 	int GS, IOP;
 	float h, grav;
+	Scheme advection_scheme;
 
 	float *color_map_boundary;
-	float *color_map;
 	float *obstruction_map;
 	float *source_map;
+
 	float *density_map;
+	float *density_map_b;
+	float *density_map_f;
+	float *density_map_err;
+	float *density_map_bfe;
+	float *temp_density_map_b;
+	float *temp_density_map_f;
+
+
 	float *velocity_map;
+	float *velocity_map_f;
+	float *velocity_map_b;
+	float *velocity_map_err;
+	float *velocity_map_bfe;
+	float *temp_velocity_map_b;
+	float *temp_velocity_map_f;
+
+	float *color_map;
+	float *color_map_f;
+	float *color_map_b;
+	float *color_map_err;
+	float *color_map_bfe;
+	float *temp_color_map_b;
+	float *temp_color_map_f;
+
 	float *divergence_map;
 	float *divergence_source_map;
 	float *pressure_map;
-
-	float *swap_vel;
-	float *swap_den;
-	float *swap_col;
 
 	float *temp_vel_map;
 	float *temp_den_map;
