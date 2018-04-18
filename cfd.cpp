@@ -1,5 +1,6 @@
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include "cfd.h"
 
 cfd::cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, float _grav, Scheme _advect){
@@ -12,6 +13,10 @@ cfd::cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, fl
     h = _h;
     grav = _grav;
     advection_scheme = _advect;
+    has_vorticity = false;
+    has_surfacetension = false;
+    V = 1.0;
+    T = 0.1;
 
     dx = lx / (nx - 1);
     dy = ly / (ny - 1);
@@ -41,6 +46,12 @@ cfd::cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, fl
     temp_velocity_map_b = new float[2*size];
     temp_velocity_map_f = new float[2*size];
     Initialize(velocity_map, 2*size, 0.0);
+    Initialize(velocity_map_f, 2*size, 0.0);
+    Initialize(velocity_map_b, 2*size, 0.0);
+    Initialize(temp_velocity_map_f, 2*size, 0.0);
+    Initialize(temp_velocity_map_b, 2*size, 0.0);
+    Initialize(velocity_map_bfe, 2*size, 0.0);
+
 
     color_map = new float[3*size];
     color_map_b = new float[3*size];
@@ -50,7 +61,15 @@ cfd::cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, fl
     temp_color_map_b = new float[3*size];
     temp_color_map_f = new float[3*size];
     color_map_boundary = new float[3*size];
+    Initialize(color_map, 3*size, 0.0);
+    Initialize(color_map_f, 3*size, 0.0);
+    Initialize(color_map_b, 3*size, 0.0);
+    Initialize(temp_color_map_f, 3*size, 0.0);
+    Initialize(temp_color_map_b, 3*size, 0.0);
+    Initialize(color_map_bfe, 3*size, 0.0);
 
+    w_map = new float[size];
+    Initialize(w_map, size, 0.0);
     obstruction_map = new float[size];
     Initialize(obstruction_map, size, 1.0);
 
@@ -67,6 +86,10 @@ cfd::cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, fl
     temp_den_map = new float[size];
     temp_col_map = new float[3*size];
     temp_pre_map = new float[size];
+    Initialize(temp_vel_map, 2*size, 0.0);
+    Initialize(temp_col_map, 3*size, 0.0);
+    Initialize(temp_den_map, size, 0.0);
+    Initialize(temp_pre_map, size, 0.0);
 }
 
 void cfd::updateTimeStep(float _h){
@@ -93,7 +116,6 @@ float* cfd::getDivergenceSourceMap(){
     return divergence_source_map;
 }
 
-
 float* cfd::getColorMapWithBoundary(){
     for(int j=0; j<ny; j++){
       for(int i = 0; i < nx; i++){
@@ -107,31 +129,36 @@ float* cfd::getColorMapWithBoundary(){
 }
 
 void cfd::getVelocity(int i, int j, float &u, float &v, float *velocityMap){
-   int index = i + nx*j;
-   if(i >= 0 && i < nx && j >= 0 && j < ny){
+    int index = i + nx*j;
+    if(i >= 0 && i < nx && j >= 0 && j < ny){
       u = velocityMap[2*index+0]*obstruction_map[index];
       v = velocityMap[2*index+1]*obstruction_map[index];
-   }else{
+    }else{
       u = 0.0;
       v = 0.0;
-   }  
+    }  
+}
+
+void cfd::getAreaRotation(int i, int j, float &w){
+    int index = i + nx * j;
+    if(i >= 0 && i < nx && j >= 0 && j < ny){
+        w = w_map[index];
+    }else{
+        w = 0.0;
+    }
 }
 
 void cfd::getDensity(int i, int j, float &den, float* densityMap){
 
    int index = i + nx*j;
-   // if(i >= 0 && i < nx && j >= 0 && j < ny){
-   //    den = density_map[index]*obstruction_map[index];
-   // }else{
-   //    den = 0.0;
-   // }   
 
    if(i >= 0 && i < nx && j >= 0 && j < ny && den){
 
       den = densityMap[index]*obstruction_map[index];
-      if(den < -0.001){
-        den = 0.0;
-      }
+       if(den < 0.0001){
+         den = 0.0;
+         densityMap[index] = 0.0;
+       }
 
    }else{
       den = 0.0;
@@ -143,7 +170,7 @@ void cfd::getColor(int i, int j, int channel, float &col, float* colorMap){
    if(i >= 0 && i < nx && j >= 0 && j < ny){
       col = colorMap[3*index+channel];
    }else{
-      col = 0.0;
+      col = 1.0;
    } 
 }
 
@@ -269,11 +296,22 @@ void cfd::advectDensity(float *&target_density_map, float *&source_density_map, 
              }
          }
    }
+
+   for( int j=0;j<ny;j++ )
+       {
+           for(int i=0;i<nx;i++ )
+           {    
+             index = i + nx * j;
+             target_density_map[2*index+0] = temp_density_map[2*index+0];
+             target_density_map[2*index+1] = temp_density_map[2*index+1];
+             
+           }
+       }
    
-   std::swap(target_density_map, temp_density_map);
+   //std::swap(target_density_map, temp_density_map);
 }
 
-void cfd::advectDensityBFECC(){
+void cfd::advectDensityScheme(Scheme s){
    
     //pf = p0;
    int index;
@@ -298,21 +336,32 @@ void cfd::advectDensityBFECC(){
       }
     }
 
-    // 4. Add error
-    // error might be negative sometimes
-    for(int j=0; j<ny; j++){
-      for(int i=0; i<nx; i++){
-        index = i+nx*j;
-        density_map_bfe[index] = density_map[index] + density_map_err[index];
-      }
+    if(s == BFECC){
+      // 4. Add error
+   
+        for(int j=0; j<ny; j++){
+          for(int i=0; i<nx; i++){
+            index = i+nx*j;
+            density_map_bfe[index] = density_map[index] + density_map_err[index];
+          }
+        }
+
+        // 5. Update density
+        advectDensity(density_map, density_map_bfe, temp_den_map, false);
     }
 
-    // 5. Update density
-    advectDensity(density_map, density_map_bfe, temp_den_map, false);
-
+    if(s == MM){
+      // 4. Add error
+      for(int j=0; j<ny; j++){
+        for(int i = 0; i<nx; i++){
+          index = i+nx*j;
+          density_map[index] = density_map_f[index]+density_map_err[index];
+        }
+      }
+    }
 }
 
-void cfd::advectVelocityBFECC(){
+void cfd::advectVelocityScheme(Scheme s){
    
     //pf = p0;
    int index;
@@ -340,18 +389,30 @@ void cfd::advectVelocityBFECC(){
       }
     }
 
-    // 4. Add error
-    for(int j=0; j<ny; j++){
-      for(int i=0; i<nx; i++){
-        index = i+nx*j;
-        velocity_map_bfe[2*index+0] = velocity_map[2*index+0] + velocity_map_err[2*index+0];
-        velocity_map_bfe[2*index+1] = velocity_map[2*index+1] + velocity_map_err[2*index+1];
-      }
+    if(s == BFECC){
+      // 4. Add error
+        for(int j=0; j<ny; j++){
+          for(int i=0; i<nx; i++){
+            index = i+nx*j;
+            velocity_map_bfe[2*index+0] = velocity_map[2*index+0] + velocity_map_err[2*index+0];
+            velocity_map_bfe[2*index+1] = velocity_map[2*index+1] + velocity_map_err[2*index+1];
+          }
+        }
+
+        // 5. Update velocity
+        advectVelocity(velocity_map, velocity_map_bfe, temp_vel_map, false);
     }
 
-    // 5. Update velocity
-    advectVelocity(velocity_map, velocity_map_bfe, temp_vel_map, false);
-
+    if(s == MM){
+      // 4. Add error
+      for(int j=0; j<ny; j++){
+        for(int i = 0; i<nx; i++){
+          index = i+nx*j;
+          velocity_map[2*index+0] = velocity_map_f[2*index+0] + velocity_map_err[2*index+0];
+          velocity_map[2*index+1] = velocity_map_f[2*index+1] + velocity_map_err[2*index+1];
+        }
+      }
+    } 
 }
 
 
@@ -403,8 +464,19 @@ void cfd::advectVelocity(float *&target_velocity_map, float *&source_velocity_ma
          }
      }
    }
+
+   for( int j=0;j<ny;j++ )
+       {
+           for(int i=0;i<nx;i++ )
+           {    
+             index = i + nx * j;
+             target_velocity_map[2*index+0] = temp_velocity_map[2*index+0];
+             target_velocity_map[2*index+1] = temp_velocity_map[2*index+1];
+             
+           }
+       }
  
-   std::swap(target_velocity_map, temp_velocity_map);
+   //std::swap(target_velocity_map, temp_velocity_map);
 }
 
 void cfd::advectColor(float *&target_color_map, float *&source_color_map, float *&temp_color_map, bool isBackWards){
@@ -458,10 +530,22 @@ void cfd::advectColor(float *&target_color_map, float *&source_color_map, float 
        }
         
      }
-  std::swap(target_color_map, temp_color_map);
+
+     for( int j=0;j<ny;j++ )
+       {
+           for(int i=0;i<nx;i++ )
+           {    
+             index = i + nx * j;
+             target_color_map[3*index+0] = temp_color_map[3*index+0];
+             target_color_map[3*index+1] = temp_color_map[3*index+1];
+             target_color_map[3*index+2] = temp_color_map[3*index+2];
+
+           }
+       }
+ // std::swap(target_color_map, temp_color_map);
 }
 
-void cfd::advectColorBFECC(){
+void cfd::advectColorScheme(Scheme s){
    
     //pf = p0;
    int index;
@@ -491,18 +575,32 @@ void cfd::advectColorBFECC(){
       }
     }
 
-    // 4. Add error
-    for(int j=0; j<ny; j++){
-      for(int i=0; i<nx; i++){
-        index = i+nx*j;
-        color_map_bfe[3*index+0] = color_map[3*index+0] + color_map_err[3*index+0];
-        color_map_bfe[3*index+1] = color_map[3*index+1] + color_map_err[3*index+1];
-        color_map_bfe[3*index+2] = color_map[3*index+2] + color_map_err[3*index+2];
-      }
-    }
+    if(s == BFECC){
+            // 4. Add error
+          for(int j=0; j<ny; j++){
+            for(int i=0; i<nx; i++){
+              index = i+nx*j;
+              color_map_bfe[3*index+0] = color_map[3*index+0] + color_map_err[3*index+0];
+              color_map_bfe[3*index+1] = color_map[3*index+1] + color_map_err[3*index+1];
+              color_map_bfe[3*index+2] = color_map[3*index+2] + color_map_err[3*index+2];
+            }
+          }
 
-    // 5. Update velocity
-    advectColor(color_map, color_map_bfe, temp_col_map, false);
+          // 5. Update velocity
+          advectColor(color_map, color_map_bfe, temp_col_map, false);
+     }
+
+    if(s == MM){
+        // 4. Add error
+        for(int j=0; j<ny; j++){
+          for(int i = 0; i<nx; i++){
+            index = i+nx*j;
+            color_map[3*index+0] = color_map_f[3*index+0] + color_map_err[3*index+0];
+            color_map[3*index+1] = color_map_f[3*index+1] + color_map_err[3*index+1];
+            color_map[3*index+2] = color_map_f[3*index+2] + color_map_err[3*index+2];
+          }
+        }
+    }
 
 }
 
@@ -522,8 +620,105 @@ void cfd::bouyancy(){
    }
 }
 
+void cfd::surface_tension(){
+  int index;
+  float pr, pl, pu, pd, p, pru, pld, prd, plu;
+  float gradx, grady, normalizer, mxx, myy, mxy, k;
+
+  for(int j=0; j<ny; j++){
+    for(int i = 0; i<nx; i++){
+      index = i + nx * j;
+
+      getDensity(i+1, j+0, pr, density_map);
+      getDensity(i-1, j+0, pl, density_map);
+      getDensity(i+0, j+1, pu, density_map);
+      getDensity(i+0, j-1, pd, density_map);
+      getDensity(i+0, j+0, p,  density_map);
+      getDensity(i+1, j+1, pru, density_map);
+      getDensity(i-1, j-1, pld, density_map);
+      getDensity(i+1, j-1, prd, density_map);
+      getDensity(i-1, j+1, plu, density_map);
+
+      gradx = (pr - pl)/(2*dx);
+      grady = (pu - pd)/(2*dy);
+
+      normalizer = sqrt(gradx*gradx + grady*grady);
+      mxx = (pr - pl - 2 * p)/(dx * dx);
+      myy = (pu - pd - 2 * p)/(dy * dy);
+      mxy = (pru + pld - prd - plu)/(4*dx* dy);
+      k = (mxx + myy - gradx * gradx * mxx - grady * grady * myy + 2 * gradx *grady * mxy);
+
+      if(normalizer > 0.001){
+        k /= normalizer;
+        gradx /= normalizer;
+        grady /= normalizer;
+      }
+      
+      velocity_map[2*index + 0] += k * h * gradx * T;
+      velocity_map[2*index + 1] += k * h * grady * T;    
+
+    }
+  }
+}
+
+void cfd::vorticity_confinement(){
+    int index;
+    float w, u_up, v_up,u_down, v_down, u_left, v_left, u_right, v_right;
+    float ex, ey, normalizer;
+    float e_right, e_left, e_up, e_down, e_ij, D;
+    Initialize(w_map, size, 0.0);
+
+    // Identify the area of rotation
+
+    for(int j=0; j<ny; j++){
+        for(int i = 0; i<nx; i++){
+            index = i + nx * j;
+            getVelocity(i+1, j+0, u_right,v_right, velocity_map);
+            getVelocity(i-1, j+0, u_left,v_left, velocity_map);
+            getVelocity(i+0, j+1, u_up,v_up, velocity_map);
+            getVelocity(i+0, j-1, u_down,v_down, velocity_map);
+            w = -(v_right - v_left)/(2*dx)+(u_up-u_down)/(2*dy);
+            w_map[index]=std::abs(w);
+        }
+    }
+    
+    for(int j=0; j<ny; j++){
+        for(int i = 0; i<nx; i++){
+            index = i + nx * j;
+            getAreaRotation(i+1, j+0, e_right);
+            getAreaRotation(i-1, j+0, e_left);
+            getAreaRotation(i+0, j+1, e_up);
+            getAreaRotation(i+0, j-1, e_down);
+            getAreaRotation(i+0, j+0, e_ij);
+            getDivergence(i+0, j+0, D);
+
+            ex = (e_right - e_left)/ (2 * dx);
+            ey = (e_up - e_down)/(2*dy);
+            normalizer = sqrt(ex * ex + ey * ey);
+
+            if(normalizer > 0.0001){
+                ex = ex/normalizer;
+                ey = ey/normalizer;
+            }
+            
+            velocity_map[2*index + 0] += e_ij * h * D * dx *(-ey) * V;
+            velocity_map[2*index + 1] += e_ij * h * D * dx * ex * V;    
+        }
+    }
+}
+
+void cfd::updateScheme(Scheme s){
+    advection_scheme = s;
+}
+
 void cfd::addForces(){
    bouyancy();
+   if(has_surfacetension){
+      surface_tension();
+   }
+   if(has_vorticity){
+      vorticity_confinement();
+   }
 }
 
 void cfd::drawSourcesToDensity(){
@@ -555,7 +750,14 @@ void cfd::modifyVelocity(){
       }
    }
 
-   std::swap(velocity_map, temp_vel_map);
+   for(int j = 0; j < ny; j++){
+      for(int i = 0; i < nx; i++){
+         int index = i + nx * j;
+         velocity_map[2*index+0] = temp_vel_map[2*index+0];
+         velocity_map[2*index+1] = temp_vel_map[2*index+1];
+   }
+ }
+   //std::swap(velocity_map, temp_vel_map);
 }
 
 void cfd::computeDivergence(){
@@ -635,13 +837,13 @@ void cfd::updateFluid(){
       advectColor(color_map, color_map, temp_col_map, false);
    }
 
-   if(advection_scheme == BFECC){
-      advectDensityBFECC();
-      advectVelocityBFECC();
+   if(advection_scheme != SL){
+      advectDensityScheme(advection_scheme);
+      advectVelocityScheme(advection_scheme);
       drawSourcesToDensity();
       addForces();
       project();
-      advectColorBFECC();
+      advectColor(color_map, color_map, temp_col_map, false);
    }
    
 }
@@ -651,8 +853,6 @@ void cfd::Initialize( float *data, int size, float value )
 #pragma omp parallel for
    for(int i=0;i<size;i++ ) { data[i] = value; }
 }
-
-
 
 cfd::~cfd(){
     delete color_map_boundary;

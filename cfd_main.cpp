@@ -78,6 +78,8 @@ float *divergence_source_map;
 bool capture_screen;
 bool is_on;
 bool has_boundary;
+bool has_surfacetension;
+bool has_vorticity;
 
 int frame;
 int iwidth, iheight, size;
@@ -101,7 +103,7 @@ enum{ PAINT_OBSTRUCTION, PAINT_SOURCE, PAINT_DIVERGENCE, PAINT_COLOR };
 float scaling_factor;
 
 float h = 0.02; // timestep
-float grav = 9.8;
+float grav = 5.8;
 
 #define BRUSH_SIZE 11
 int demo = 1;
@@ -447,10 +449,35 @@ void cbOnKeyboard( unsigned char key, int x, int y )
       has_boundary = !has_boundary;
       break;
 
-      //case 'e':
-      //writeTestImage( "test.jpg", density_map );
-      //exit(0);
-      //break;
+      case 'B':
+      cout<<"changes to BFECC scheme" << endl;
+      cfd_demo->updateScheme(BFECC);
+      break;
+
+      case 'M':
+      cout<<"changes to MM scheme" << endl;
+      cfd_demo->updateScheme(MM);
+      break;
+
+      case 'S':
+        has_surfacetension = !has_surfacetension;
+        cfd_demo->has_surfacetension = has_surfacetension;
+        if(has_surfacetension){
+          cout << "surface tension is on"<< endl;
+        }else{
+          cout << "surface tension is off"<< endl;
+        }
+      break;
+
+      case 'V':
+        has_vorticity = !has_vorticity;
+        cfd_demo->has_vorticity = has_vorticity;
+        if(has_vorticity){
+          cout << "vorticity is on"<< endl;
+        }else{
+          cout << "vorticity is off"<< endl;
+        }
+      break;
 
       case ' ':
       if(is_on){
@@ -462,6 +489,30 @@ void cbOnKeyboard( unsigned char key, int x, int y )
       }
       break;
 
+      case 't':
+          cfd_demo->T *= 0.9;
+          cout << "decrease surface tension to "<<cfd_demo->T<<endl;
+          break;
+
+      case 'T':
+          cfd_demo->T *= 1.0/0.9;
+          cout << "increase surface tension to "<<cfd_demo->T<<endl;
+          break;
+
+      case 'y':
+          cfd_demo->V *= 0.9;
+          cout << "decrease surface tension to "<<cfd_demo->V<<endl;
+          break;
+
+      case 'Y':
+          cfd_demo->V *= 1.0/0.9;
+          cout << "increase surface tension to "<<cfd_demo->V<<endl;
+          break;
+
+      case 'L':
+          cout<<"changes to SL scheme" << endl;
+          cfd_demo->updateScheme(SL);
+          break;
       default:
       break;
    }
@@ -497,6 +548,13 @@ void PrintUsage()
    cout << "Q       increase size of the time step\n";
    cout << "g       decrease gravity constant\n";
    cout << "G       increase gravity constant\n";
+   cout << "M       changes to MM advection\n";
+   cout << "B       changes to BFECC advection\n";
+   cout << "L       changes to SL advection\n";
+   cout << "S       adds surface tension\n";
+   cout << "t/T     increase/decrease the strength of surface tension\n";
+   cout << "y/Y     increase/decrease the strength of vorticity confinement\n";
+   cout << "V       adds vorticity confinement\n";
    cout << "e       quits the program\n";
 }
 
@@ -507,7 +565,7 @@ int main(int argc, char** argv)
     frame = 1;
     CmdLineFind clf( argc, argv );
 
-    iwidth = clf.find("-iwidth", 444, "Horizontal width" );
+    iwidth = clf.find("-iwidth", 512, "Horizontal width" );
     iheight = clf.find("-iheight", iwidth, "Vertical height" );
 
     nx = clf.find("-NX", iwidth, "Horizontal grid points" );
@@ -520,7 +578,7 @@ int main(int argc, char** argv)
     captured_file_basename = clf.find("-fname", "cfdbeginning" );
 
     setNbCores(4);
-    string imagename = clf.find("-image", "bw.jpg", "Image to drive color");
+    string imagename = clf.find("-image", "grumpy.jpg", "Image to drive color");
 
     clf.usage("-h");
     clf.printFinds();
@@ -536,7 +594,10 @@ int main(int argc, char** argv)
     paint_mode = PAINT_SOURCE;
     display_mode = DISPLAY;
     has_boundary = true;
-    advection_scheme = SL;
+    has_vorticity = false;
+    has_surfacetension = false;
+
+    advection_scheme = MM;
     //advection_scheme = BFECC;
 
 
@@ -559,9 +620,8 @@ int main(int argc, char** argv)
       readOIIOImage( imagename.c_str(), cfd_demo->getColorMap() );
     }
 
- 
-   InitializeBrushes();
 
+   InitializeBrushes();
    
    // GLUT routines
    glutInit(&argc, argv);

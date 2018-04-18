@@ -8,6 +8,9 @@ class cfd
 	public:
 	cfd(float _lx, float _ly, int _nx, int _ny, int _GS, int _IOP, float _h, float _grav, Scheme _advect);
 	~cfd();
+	bool has_surfacetension;
+	bool has_vorticity;
+	float T, V;
 
 	float* getColorMap();
 	float* getSourceMap();
@@ -20,6 +23,7 @@ class cfd
 	void getColor(int i, int j, int channel, float &col, float *colorMap);
 	void getDivergence(int i, int j, float &div);
 	void getPressure(int i, int j, float &pre);
+	void getAreaRotation(int i, int j, float &w);
 
 	void interpolateVelocity(float x, float y, float &u, float &v, float *velocityMap);
 	void interpolateDensity(float x, float y, float &res, float *densityMap);
@@ -29,12 +33,14 @@ class cfd
 	void advectVelocity(float *&target_velocity_map, float *&source_velocity_map, float *&temp_velocity_map, bool isBackWards);
 	void advectColor(float *&target_color_map, float *&source_color_map, float *&temp_color_map, bool isBackWards);
 
-	void advectDensityBFECC();
-	void advectVelocityBFECC();
-	void advectColorBFECC();
+	void advectDensityScheme(Scheme s);
+	void advectVelocityScheme(Scheme s);
+	void advectColorScheme(Scheme s);
 
 
 	void bouyancy();
+	void surface_tension();
+	void vorticity_confinement();
 	void addForces();
 	
 	void computeDivergence();
@@ -47,10 +53,12 @@ class cfd
 	void drawSourcesToDensity();
 	void updateTimeStep(float _h);
 	void updateGrav(float _grav);
+	void updateScheme(Scheme s);
+
 	void Initialize( float *data, int size, float value );
 
 private:
-
+	
 	int nx, ny;
 	int size;
 	float lx, ly;
@@ -58,6 +66,7 @@ private:
 	int GS, IOP;
 	float h, grav;
 	Scheme advection_scheme;
+
 
 	float *color_map_boundary;
 	float *obstruction_map;
@@ -91,6 +100,8 @@ private:
 	float *divergence_map;
 	float *divergence_source_map;
 	float *pressure_map;
+
+	float *w_map;
 
 	float *temp_vel_map;
 	float *temp_den_map;
